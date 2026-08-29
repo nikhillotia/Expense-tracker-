@@ -42,7 +42,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.7 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.8 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
@@ -59,13 +59,14 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 <section id="import" class="view">
   <div class="card">
     <h2>Import statement</h2>
-    <p class="muted">V3.3 accepts CSV, Excel (.xls/.xlsx) and text-based PDF statements. Files are parsed in your browser; they are not uploaded to a server.</p>
+    <p class="muted">V3.8 accepts CSV, Excel (.xls/.xlsx) and text-based PDF statements. Files are parsed in your browser; they are not uploaded to a server.</p>
 
     <div class="section"><input id="source" placeholder="Source e.g. ICICI Bank / ICICI Card / Axis Card"></div>
 
     <div class="section">
-      <label class="muted" for="pdfPassword">PDF password <span class="small">(only for password-protected PDFs)</span></label>
+      <label class="muted" for="pdfPassword"><b>PDF password</b> <span class="small">(only if your PDF is password-protected)</span></label>
       <input id="pdfPassword" type="password" autocomplete="off" placeholder="Enter PDF password">
+      <p class="muted small">If your PDF opens normally without a password, leave this blank.</p>
     </div>
 
     <div class="section drop">
@@ -565,64 +566,105 @@ function parsePDFStructured(items){
   let added=0;
   let seen=new Set(state.tx.map(t=>[t.date,String(t.description||'').toLowerCase().trim(),Number(t.amount)||0,t.type].join('|')));
   const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
-  const moneyRe=/(?:₹|INR|Rs\.?\s*)?\(?-?\d[\d,]*\.\d{2}\)?(?:\s*(?:DR|CR|DEBIT|CREDIT))?/i;
+  const moneyRe=/(?:₹|INR|Rs\.?\s*)?\(?-?\d[\d,]*(?:\.\d{2})?\)?(?:\s*(?:DR|CR|DEBIT|CREDIT))?/i;
+  const dateRe=/\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})\b/i;
   const groups=[];
-  // IMPORTANT: group by PAGE + Y.  The same Y coordinates repeat on
-  // every PDF page; grouping only by Y merges transactions from pages 1-3.
   for(const it of items.filter(x=>x.str&&x.str.trim())){
-    const page = Number(it.page || 1);
-    const y=Math.round(it.transform[5]);
-    let g=groups.find(a=>a.page===page && Math.abs(a.y-y)<=2);
+    const page=Number(it.page||1), y=Math.round(it.transform[5]);
+    let g=groups.find(a=>a.page===page&&Math.abs(a.y-y)<=2);
     if(!g){g={page,y,items:[]};groups.push(g)}
     g.items.push({x:it.transform[4],text:it.str});
   }
-  groups.sort((a,b)=>a.page-b.page || b.y-a.y);
-  let current=null;
+  groups.sort((a,b)=>a.page-b.page||b.y-a.y);
 
-  const finish=()=>{
+  /* First use the bank-statement layout parser for rows that clearly have
+     serial/date + transaction amount + running balance. */
+  let current=null;
+  const finishBank=()=>{
     if(!current)return;
-    const all=current.parts.map(p=>p.text).join(' ');
-    const amountObj=current.amountObj, balanceObj=current.balanceObj;
+    const amountObj=current.amountObj,balanceObj=current.balanceObj;
     if(!amountObj||!balanceObj){current=null;return;}
-    const amount=amountObj.amount;
-    if(!amount){current=null;return;}
+    const amount=amountObj.amount;if(!amount){current=null;return;}
     const desc=clean(current.descParts.join(' '))||'Imported transaction';
-    let type=current.direction;
-    // ICICI's columns are Withdrawal (~x=417), Deposit (~x=483), Balance (~x=531).
-    // Direction is taken from the actual column, never from the running balance.
-    let parsed={date:current.date,description:desc,amount,type,category:guess(desc),person:'',source:currentSource()};
+    let parsed={date:current.date,description:desc,amount,type:current.direction,category:guess(desc),person:'',source:currentSource()};
     classifyImportedTransaction(parsed);
     const key=[parsed.date,parsed.description.toLowerCase(),parsed.amount,parsed.type].join('|');
     if(!seen.has(key)){seen.add(key);state.tx.push(parsed);added++}
     current=null;
   };
-
   for(const g of groups){
     const text=g.items.map(i=>i.text).join(' ');
-    const header=text.match(/^\s*(\d+)\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b/);
+    const header=text.match(/^\s*\d+\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b/);
     if(header){
-      finish();
-      const date=cleanDate(header[2]);
-      // All decimal monetary tokens on the transaction header row, with x positions.
+      finishBank();
+      const date=cleanDate(header[1]);
       const vals=g.items.map(i=>{const m=i.text.match(moneyRe);return m?{...parseMoney(m[0]),x:i.x,text:m[0]}:null}).filter(Boolean);
-      if(vals.length<2){current=null;continue;}
-      vals.sort((a,b)=>a.x-b.x);
-      const balanceObj=vals[vals.length-1];
-      const amountCandidates=vals.slice(0,-1);
-      const amountObj=amountCandidates[amountCandidates.length-1];
-      // Deposit is the column immediately left of Balance; Withdrawal is further left.
-      const direction=(amountObj.x>balanceObj.x-70)?'income':'expense';
-      const remainder=g.items.filter(i=>!/^\d{1,3}$/.test(i.text)&&!/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(i.text));
-      current={date,amountObj,balanceObj,direction,parts:g.items,descParts:remainder.map(i=>i.text)};
-      continue;
-    }
-    if(current){
-      // Ignore page headers/footers but retain transaction remarks.
-      if(/www\.icici\.bank\.in|please call|never share|sincerly|team icici bank|legends for transactions|^transaction\s|^s\.?no\.?\s/i.test(text))continue;
-      current.descParts.push(text);
+      if(vals.length>=2){
+        vals.sort((a,b)=>a.x-b.x);
+        const balanceObj=vals[vals.length-1],amountObj=vals[vals.length-2];
+        const direction=(amountObj.x>balanceObj.x-70)?'income':'expense';
+        const remainder=g.items.filter(i=>!/^\d{1,3}$/.test(i.text)&&!/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(i.text));
+        current={date,amountObj,balanceObj,direction,descParts:remainder.map(i=>i.text)};
+        continue;
+      }
     }
   }
-  finish();
+  finishBank();
+  if(added)return added;
+
+  /* Axis/credit-card PDFs commonly have: Date | Transaction Details | Amount.
+     There is no running balance and there may be no serial-number prefix.
+     Parse each dated transaction row and carry wrapped description lines until
+     the next dated row. Start at Transaction Summary when that section exists,
+     so statement-level due-date/summary figures are never imported. */
+  let inTransactions=false,currentCard=null;
+  const finishCard=()=>{
+    if(!currentCard)return;
+    const desc=clean(currentCard.descParts.join(' '));
+    const amount=currentCard.amount;
+    if(!desc||!amount){currentCard=null;return}
+    let type='expense';
+    if(/refund|reversal|cashback|cash back|payment received|credit/i.test(desc))type='refund';
+    let parsed={date:currentCard.date,description:desc,amount,type,category:guess(desc),person:'',source:currentSource()};
+    classifyImportedTransaction(parsed);
+    const key=[parsed.date,parsed.description.toLowerCase(),parsed.amount,parsed.type].join('|');
+    if(!seen.has(key)){seen.add(key);state.tx.push(parsed);added++}
+    currentCard=null;
+  };
+
+  for(const g of groups){
+    const text=clean(g.items.map(i=>i.text).join(' '));
+    if(/transaction\s+summary/i.test(text)){inTransactions=true;continue}
+    if(!inTransactions && /date\s+transaction\s+details\s+amount/i.test(text))inTransactions=true;
+    if(!inTransactions)continue;
+    if(/payment\s+summary|reward\s+points|statement\s+summary|total\s+amount|minimum\s+amount/i.test(text)&&!dateRe.test(text))continue;
+
+    const dm=text.match(dateRe);
+    if(dm){
+      finishCard();
+      const date=cleanDate(dm[1]);
+      const after=text.slice(dm.index+dm[0].length);
+      const vals=[];
+      for(const m of after.matchAll(new RegExp(moneyRe.source,'gi'))){
+        const parsed=parseMoney(m[0]);
+        if(parsed.amount)vals.push({amount:parsed.amount,index:m.index});
+      }
+      if(vals.length){
+        const amount=vals[vals.length-1].amount;
+        const descText=after.slice(0,vals[vals.length-1].index);
+        currentCard={date,amount,descParts:[descText]};
+      }else{
+        currentCard={date,amount:0,descParts:[]};
+      }
+      continue;
+    }
+    if(currentCard){
+      /* Do not absorb obvious headers/footers into a transaction. */
+      if(/www\.axisbank\.com|axis bank|customer care|important information|page\s+\d+\s+of\s+\d+/i.test(text))continue;
+      currentCard.descParts.push(text);
+    }
+  }
+  finishCard();
   return added;
 }
 
