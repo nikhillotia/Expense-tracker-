@@ -42,7 +42,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.5 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.6 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
@@ -247,9 +247,21 @@ function renderTransactions(){
         <div class="muted">${esc(t.date)} · ${esc(t.source||"Manual")}${t.person?" · "+esc(t.person):""}</div>
         <select class="category-edit" onchange="setTransactionCategory(${t._i},this.value)">${options}</select>
       </div>
-      <span class="amount ${t.type==="refund"||t.type==="income"?"positive":""}">${t.type==="refund"||t.type==="income"?"+":"-"}${money(t.amount)}</span>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+        <span class="amount ${t.type==="refund"||t.type==="income"?"positive":""}">${t.type==="refund"||t.type==="income"?"+":"-"}${money(t.amount)}</span>
+        <button class="danger" onclick="deleteTransaction(${t._i})">Delete</button>
+      </div>
     </div>`
   }).join(""):`<div class="empty">No transactions.</div>`
+}
+
+function deleteTransaction(index){
+  const t=state.tx[index];
+  if(!t)return;
+  const label=t.description?`${t.description} — ${money(t.amount)}`:"this transaction";
+  if(!confirm(`Delete ${label}?\n\nThis cannot be undone unless you restore it from a backup.`))return;
+  state.tx.splice(index,1);
+  save();
 }
 
 function setTransactionCategory(index,category){
