@@ -42,7 +42,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.6 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.7 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
@@ -62,6 +62,11 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
     <p class="muted">V3.3 accepts CSV, Excel (.xls/.xlsx) and text-based PDF statements. Files are parsed in your browser; they are not uploaded to a server.</p>
 
     <div class="section"><input id="source" placeholder="Source e.g. ICICI Bank / ICICI Card / Axis Card"></div>
+
+    <div class="section">
+      <label class="muted" for="pdfPassword">PDF password <span class="small">(only for password-protected PDFs)</span></label>
+      <input id="pdfPassword" type="password" autocomplete="off" placeholder="Enter PDF password">
+    </div>
 
     <div class="section drop">
       <b>Select statement file</b>
@@ -630,7 +635,20 @@ async function getPDFEngine(){
 async function parsePDF(file){
   let pdfjs=await getPDFEngine();
   let buf=await file.arrayBuffer();
-  let pdf=await pdfjs.getDocument({data:buf}).promise;
+  let password=String(document.getElementById("pdfPassword")?.value||"");
+  let loadingTask=pdfjs.getDocument({
+    data:buf,
+    password:password||undefined
+  });
+  let pdf;
+  try{
+    pdf=await loadingTask.promise;
+  }catch(e){
+    if(e && (e.name==="PasswordException" || e.code===1 || e.code===2)){
+      throw new Error(password ? "Incorrect PDF password. Please check the password and try again." : "This PDF is password-protected. Enter the PDF password above and try again.");
+    }
+    throw e;
+  }
   let allItems=[];
   for(let p=1;p<=pdf.numPages;p++){
     let page=await pdf.getPage(p);
@@ -711,6 +729,9 @@ async function importStatement(){
   }catch(e){
     console.error(e);
     setStatus(e.message||"Import failed.","error")
+  }finally{
+    const pw=document.getElementById("pdfPassword");
+    if(pw)pw.value="";
   }
 }
 
