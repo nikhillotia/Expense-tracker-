@@ -38,7 +38,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 
 <!-- V2.9: classic browser scripts are more reliable on iPhone/Safari than dynamic ES-module loading. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 
 <body>
@@ -487,19 +487,9 @@ function parsePDFLines(lines){
 }
 
 async function getPDFEngine(){
-  if(window.pdfjsLib)return window.pdfjsLib;
-
-  /* Fallback for browsers that block the module version. */
-  try{
-    let mod=await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs");
-    if(mod&&mod.GlobalWorkerOptions){
-      mod.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
-    }
-    window.pdfjsLib=mod;
-    return mod
-  }catch(e){
-    throw new Error("PDF engine could not load. Check your internet connection, reload the page, and try again.")
-  }
+  if(!window.pdfjsLib) throw new Error("PDF engine could not load. Please reload the page and try again.");
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  return window.pdfjsLib;
 }
 
 async function parsePDF(file){
