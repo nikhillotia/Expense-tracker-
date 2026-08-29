@@ -42,7 +42,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.3 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.4 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
@@ -502,13 +502,16 @@ function parsePDFStructured(items){
   const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
   const moneyRe=/(?:₹|INR|Rs\.?\s*)?\(?-?\d[\d,]*\.\d{2}\)?(?:\s*(?:DR|CR|DEBIT|CREDIT))?/i;
   const groups=[];
+  // IMPORTANT: group by PAGE + Y.  The same Y coordinates repeat on
+  // every PDF page; grouping only by Y merges transactions from pages 1-3.
   for(const it of items.filter(x=>x.str&&x.str.trim())){
+    const page = Number(it.page || 1);
     const y=Math.round(it.transform[5]);
-    let g=groups.find(a=>Math.abs(a.y-y)<=2);
-    if(!g){g={y,items:[]};groups.push(g)}
+    let g=groups.find(a=>a.page===page && Math.abs(a.y-y)<=2);
+    if(!g){g={page,y,items:[]};groups.push(g)}
     g.items.push({x:it.transform[4],text:it.str});
   }
-  groups.sort((a,b)=>b.y-a.y);
+  groups.sort((a,b)=>a.page-b.page || b.y-a.y);
   let current=null;
 
   const finish=()=>{
@@ -572,18 +575,21 @@ async function parsePDF(file){
   for(let p=1;p<=pdf.numPages;p++){
     let page=await pdf.getPage(p);
     let content=await page.getTextContent();
-    allItems.push(...content.items);
+    // Keep the page number so identical Y coordinates on different pages
+    // are never merged into one transaction.
+    allItems.push(...content.items.map(it=>({...it,page:p})));
   }
   // Preview remains human-readable.
   let previewLines=[];
   const groups=[];
   for(const it of allItems.filter(x=>x.str&&x.str.trim())){
+    const page=Number(it.page||1);
     const y=Math.round(it.transform[5]);
-    let g=groups.find(a=>Math.abs(a.y-y)<=2);
-    if(!g){g={y,parts:[]};groups.push(g)}
+    let g=groups.find(a=>a.page===page && Math.abs(a.y-y)<=2);
+    if(!g){g={page,y,parts:[]};groups.push(g)}
     g.parts.push({x:it.transform[4],text:it.str});
   }
-  groups.sort((a,b)=>b.y-a.y).forEach(g=>{g.parts.sort((a,b)=>a.x-b.x);previewLines.push(g.parts.map(x=>x.text).join(' '))});
+  groups.sort((a,b)=>a.page-b.page || b.y-a.y).forEach(g=>{g.parts.sort((a,b)=>a.x-b.x);previewLines.push(g.parts.map(x=>x.text).join(' '))});
   pdfPreview.textContent=previewLines.slice(0,220).join('\n');
   pdfPreviewWrap.classList.remove('hidden');
   return parsePDFStructured(allItems);
