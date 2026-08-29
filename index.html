@@ -42,7 +42,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.4 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.5 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
@@ -95,6 +95,15 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 <section id="more" class="view">
   <div class="card"><h2>Mapping audit</h2><p class="muted section">Automatic mapping is shown below. Bank withdrawals count as monthly outflow; credits and reversals do not inflate spending. Categories identify transfers and other non-merchant outflows for review.</p><div id="mappingAudit"></div></div>
   <div class="card"><h2>Rules</h2><div id="rules"></div></div>
+  <div class="section card">
+    <h2>Categories</h2>
+    <p class="muted">Create your own categories. They appear in transaction filters, manual entry and category budgets.</p>
+    <div class="two">
+      <input id="newCategory" placeholder="e.g. School Fees">
+      <button onclick="addCategory()">+ Add category</button>
+    </div>
+    <div id="categoryList" class="section"></div>
+  </div>
   <div class="section card"><h2>People</h2><div id="people"></div></div>
   <div class="section card"><h2>Privacy</h2><p class="muted">Transactions and statement data are stored in this browser's localStorage. PDF/Excel/CSV parsing happens on this device. No statement file is sent to this app's server.</p></div>
   <div class="section card"><button class="danger" onclick="resetApp()">Reset local data</button></div>
@@ -128,14 +137,18 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </div>
 
 <script>
-const CATS=["Rent","Food & Dining","Groceries","Shopping","Transport / Fuel","Medical","Travel","Utilities","Subscriptions","Family","Cash Withdrawal","Cash Transfer","Money Given to Person","Insurance","Gifts","Bank / Card Charges","Investments","Transfer","Refund / Cashback"];
-const DEFAULT_BUDGETS={"Rent":50000,"Food & Dining":25000,"Groceries":20000,"Shopping":30000,"Transport / Fuel":20000,"Medical":10000,"Travel":40000,"Utilities":10000,"Subscriptions":5000,"Family":20000,"Cash Withdrawal":20000,"Cash Transfer":10000,"Money Given to Person":10000,"Insurance":20000,"Gifts":5000,"Bank / Card Charges":5000,"Investments":0,"Transfer":0,"Refund / Cashback":0};
+const BASE_CATS=["Rent","Food & Dining","Groceries","Shopping","Transport / Fuel","Medical","Travel","Utilities","Subscriptions","Family","Cash Withdrawal","Cash Transfer","Money Given to Person","Insurance","Gifts","Bank / Card Charges","Investments","Mutual Fund","Transfer","Refund / Cashback"];
+let CATS=[...BASE_CATS];
+const DEFAULT_BUDGETS={"Rent":50000,"Food & Dining":25000,"Groceries":20000,"Shopping":30000,"Transport / Fuel":20000,"Medical":10000,"Travel":40000,"Utilities":10000,"Subscriptions":5000,"Family":20000,"Cash Withdrawal":20000,"Cash Transfer":10000,"Money Given to Person":10000,"Insurance":20000,"Gifts":5000,"Bank / Card Charges":5000,"Investments":0,"Mutual Fund":0,"Transfer":0,"Refund / Cashback":0};
 
 /* V2.9 FINAL uses a fresh storage namespace on purpose.
    Earlier versions stored incorrect classifications (for example a credit as Utilities
    or ordinary transfers as Investments). Do not inherit those rows. */
-let state=JSON.parse(localStorage.getItem("pet_v3")||"null")||{overall:300000,budgets:DEFAULT_BUDGETS,tx:[],rules:[],imports:[]};
+let state=JSON.parse(localStorage.getItem("pet_v3")||"null")||{overall:300000,budgets:DEFAULT_BUDGETS,tx:[],rules:[],imports:[],customCats:[]};
+state.customCats=Array.isArray(state.customCats)?state.customCats:[];
+CATS=[...BASE_CATS,...state.customCats.filter(c=>c&&!BASE_CATS.includes(c))];
 state.budgets={...DEFAULT_BUDGETS,...(state.budgets||{})};
+CATS.forEach(c=>{if(!(c in state.budgets))state.budgets[c]=0});
 state.tx=state.tx||[];state.rules=state.rules||[];state.imports=state.imports||[];
 reclassifyExisting();
 localStorage.setItem("pet_v3",JSON.stringify(state));
@@ -277,11 +290,45 @@ function renderMore(){
 function setOverallBudget(v){state.overall=Number(v)||0;save()}
 function setCatBudget(c,v){state.budgets[c]=Number(v)||0;save()}
 
+function addCategory(){
+  const el=document.getElementById("newCategory");
+  const name=String(el?.value||"").trim().replace(/\\s+/g," ");
+  if(!name)return alert("Enter a category name.");
+  if(name.length>40)return alert("Category name must be 40 characters or less.");
+  if(CATS.some(c=>c.toLowerCase()===name.toLowerCase()))return alert("That category already exists.");
+  CATS.push(name);
+  state.customCats.push(name);
+  state.budgets[name]=0;
+  if(el)el.value="";
+  save();
+  renderCategoryManager();
+}
+
+function removeCustomCategory(name){
+  if(!state.customCats.includes(name))return;
+  if(state.tx.some(t=>t.category===name))return alert("This category is used by a transaction. Reassign those transactions first.");
+  state.customCats=state.customCats.filter(c=>c!==name);
+  CATS=CATS.filter(c=>c!==name);
+  delete state.budgets[name];
+  save();
+  renderCategoryManager();
+}
+
+function renderCategoryManager(){
+  const el=document.getElementById("categoryList");
+  if(!el)return;
+  const custom=state.customCats||[];
+  el.innerHTML=custom.length
+    ? custom.map(c=>`<div class="row"><span>${esc(c)}</span><button class="danger" onclick="removeCustomCategory(${JSON.stringify(c).replace(/</g,"\\u003c")})">Remove</button></div>`).join("")
+    : `<div class="empty">No custom categories yet. Built-in categories are always available.</div>`;
+}
+
 function populateSelects(){
   let opts=CATS.map(c=>`<option>${esc(c)}</option>`).join("");
   filterCategory.innerHTML='<option value="">All categories</option>'+opts;
   aCat.innerHTML=opts;
-  budgetInput.value=state.overall
+  budgetInput.value=state.overall;
+  renderCategoryManager();
 }
 
 function showAdd(){modal.style.display="block";aDate.value=new Date().toISOString().slice(0,10)}
@@ -320,8 +367,9 @@ function guess(d){
   if(/cc billpay|ccbillpay|credit card bill|card payment|billpay.*self|\bself\b/.test(x))return"Bank / Card Charges";
   if(/fcpgaxisbankbs|fcpgupiintent/.test(x))return"Bank / Card Charges";
 
-  // Investments: only explicit investment/mutual-fund wording.
-  if(/nippon india|nippon ind|hsbc mutua|tata mutua|axis mutua|sbi mutual|hdfc mutua|mutual fund|cams|amfi|mf\b|sip\b/.test(x))return"Investments";
+  // Mutual funds get their own category; broader investments remain Investments.
+  if(/mutual fund|mutualfund|mutua[l]? fund|nippon india|nippon ind|hsbc mutua|tata mutua|axis mutua|sbi mutual|hdfc mutua|cams|amfi|\bmf\b|\bsip\b/.test(x))return"Mutual Fund";
+  if(/investment|investments|zerodha|groww|coin/.test(x))return"Investments";
 
   // Merchant/category mapping.
   if(/\brent\b|rent pay|rentpay|house rent|home rent|monthly rent|rent payment|lease rent|rental payment|landlord|nobroker|nestaway/.test(x))return"Rent";
