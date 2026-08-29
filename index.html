@@ -42,7 +42,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.1 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V3.3 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
@@ -59,7 +59,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 <section id="import" class="view">
   <div class="card">
     <h2>Import statement</h2>
-    <p class="muted">V3.1 accepts CSV, Excel (.xls/.xlsx) and text-based PDF statements. Files are parsed in your browser; they are not uploaded to a server.</p>
+    <p class="muted">V3.3 accepts CSV, Excel (.xls/.xlsx) and text-based PDF statements. Files are parsed in your browser; they are not uploaded to a server.</p>
 
     <div class="section"><input id="source" placeholder="Source e.g. ICICI Bank / ICICI Card / Axis Card"></div>
 
@@ -471,87 +471,87 @@ function dateFromText(s){
 }
 
 function parsePDFLines(lines){
-  let added=0;
-  let seen=new Set(state.tx.map(t=>[t.date,String(t.description||"").toLowerCase().trim(),Number(t.amount)||0,t.type].join("|")));
-  let current=null;
-  let previousBalance=null;
+  // Legacy text-only path. The browser PDF reader now normally uses the
+  // x-position-aware parser below, but keep this fallback for pasted text.
+  let added=0, seen=new Set(state.tx.map(t=>[t.date,String(t.description||'').toLowerCase().trim(),Number(t.amount)||0,t.type].join('|')));
+  let previousBalance=null, current=null;
+  const cleanText=s=>String(s||'').replace(/\s+/g,' ').trim();
+  const isHeader=s=>/^\s*\d+\s+\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/.test(String(s||''));
+  const moneyTokenRe=/(?:₹|INR|Rs\.?\s*)?\(?-?\d[\d,]*\.\d{2}\)?(?:\s*(?:DR|CR|DEBIT|CREDIT))?/gi;
+  const finish=()=>{
+    if(!current)return;
+    let vals=[...current.lines.join(' ').matchAll(moneyTokenRe)];
+    if(vals.length<2){current=null;return;}
+    let tx=parseMoney(vals[0][0]).amount, bal=parseMoney(vals[1][0]).amount;
+    let amount=tx, type=current.type||'expense';
+    if(previousBalance!==null){let d=Number((bal-previousBalance).toFixed(2)); if(Math.abs(Math.abs(d)-tx)<0.02){amount=Math.abs(d);type=d>0?'income':'expense'}}
+    let desc=cleanText(current.lines.join(' ').replace(vals[0][0],'').replace(vals[1][0],''))||'Imported transaction';
+    let parsed={date:current.date,description:desc,amount,type,category:guess(desc),person:'',source:currentSource()};
+    classifyImportedTransaction(parsed);
+    let key=[parsed.date,parsed.description.toLowerCase(),parsed.amount,parsed.type].join('|');
+    if(!seen.has(key)){seen.add(key);state.tx.push(parsed);added++}
+    previousBalance=bal; current=null;
+  };
+  for(const raw of lines){let line=cleanText(raw);if(!line)continue;if(isHeader(line)){finish();let m=line.match(/^\s*\d+\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b(.*)$/);current={date:cleanDate(m[1]),lines:[m[2]||'']}}else if(current)current.lines.push(line)}
+  finish(); return added;
+}
 
-  const moneyMatches=s=>[...String(s||"").matchAll(/(?:₹|INR|Rs\.?\s*)?-?\(?\d[\d,]*(?:\.\d{1,2})?\)?(?:\s*(?:DR|CR|DEBIT|CREDIT))?/gi)];
-  const cleanText=s=>String(s||"").replace(/\s+/g," ").trim();
-  const isNoise=s=>/^(transaction|s\s*no\.?|date|cheque number|transaction remarks|withdrawal|deposit|balance|amount\s*\(inr\)|www\.icici\.bank\.in|please call|never share|sincerly|team icici bank|legends for transactions)/i.test(cleanText(s)) || /www\.icici\.bank\.in|please call from your registered|never share your otp|legends for transactions/i.test(cleanText(s));
+function parsePDFStructured(items){
+  let added=0;
+  let seen=new Set(state.tx.map(t=>[t.date,String(t.description||'').toLowerCase().trim(),Number(t.amount)||0,t.type].join('|')));
+  const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
+  const moneyRe=/(?:₹|INR|Rs\.?\s*)?\(?-?\d[\d,]*\.\d{2}\)?(?:\s*(?:DR|CR|DEBIT|CREDIT))?/i;
+  const groups=[];
+  for(const it of items.filter(x=>x.str&&x.str.trim())){
+    const y=Math.round(it.transform[5]);
+    let g=groups.find(a=>Math.abs(a.y-y)<=2);
+    if(!g){g={y,items:[]};groups.push(g)}
+    g.items.push({x:it.transform[4],text:it.str});
+  }
+  groups.sort((a,b)=>b.y-a.y);
+  let current=null;
 
   const finish=()=>{
     if(!current)return;
-    let amount=current.amount, balance=current.balance;
-    let desc=cleanText(current.description);
-    if(!amount||!desc){current=null;return;}
-
-    // ICICI's PDF places Withdrawal, Deposit and Balance on the transaction's
-    // date line. The FIRST monetary value is the transaction amount; the LAST
-    // monetary value is the running Balance and must never be counted as spend.
-    let type=current.explicitCredit?"income":current.explicitDebit?"expense":null;
-    if(!type && previousBalance!==null && balance!==null){
-      let delta=Number((balance-previousBalance).toFixed(2));
-      if(Math.abs(Math.abs(delta)-amount)<0.02) type=delta>0?"income":"expense";
-    }
-    if(!type)type="expense";
-
-    let parsed={date:current.date,description:desc,amount,type,category:guess(desc),person:"",source:currentSource()};
+    const all=current.parts.map(p=>p.text).join(' ');
+    const amountObj=current.amountObj, balanceObj=current.balanceObj;
+    if(!amountObj||!balanceObj){current=null;return;}
+    const amount=amountObj.amount;
+    if(!amount){current=null;return;}
+    const desc=clean(current.descParts.join(' '))||'Imported transaction';
+    let type=current.direction;
+    // ICICI's columns are Withdrawal (~x=417), Deposit (~x=483), Balance (~x=531).
+    // Direction is taken from the actual column, never from the running balance.
+    let parsed={date:current.date,description:desc,amount,type,category:guess(desc),person:'',source:currentSource()};
     classifyImportedTransaction(parsed);
-    let key=[parsed.date,parsed.description.toLowerCase(),parsed.amount,parsed.type].join("|");
-    if(!seen.has(key)){
-      seen.add(key);
-      state.tx.push(parsed);
-      added++;
-    }
-    if(balance!==null)previousBalance=balance;
+    const key=[parsed.date,parsed.description.toLowerCase(),parsed.amount,parsed.type].join('|');
+    if(!seen.has(key)){seen.add(key);state.tx.push(parsed);added++}
     current=null;
   };
 
-  for(let raw of lines){
-    let line=cleanText(raw);
-    if(line.length<3)continue;
-
-    // Page headers/footers must not become part of the previous transaction's description.
-    if(isNoise(line)){
-      if(/www\.icici\.bank\.in|sincerly|team icici bank|legends for transactions/i.test(line))finish();
+  for(const g of groups){
+    const text=g.items.map(i=>i.text).join(' ');
+    const header=text.match(/^\s*(\d+)\s+(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b/);
+    if(header){
+      finish();
+      const date=cleanDate(header[2]);
+      // All decimal monetary tokens on the transaction header row, with x positions.
+      const vals=g.items.map(i=>{const m=i.text.match(moneyRe);return m?{...parseMoney(m[0]),x:i.x,text:m[0]}:null}).filter(Boolean);
+      if(vals.length<2){current=null;continue;}
+      vals.sort((a,b)=>a.x-b.x);
+      const balanceObj=vals[vals.length-1];
+      const amountCandidates=vals.slice(0,-1);
+      const amountObj=amountCandidates[amountCandidates.length-1];
+      // Deposit is the column immediately left of Balance; Withdrawal is further left.
+      const direction=(amountObj.x>balanceObj.x-70)?'income':'expense';
+      const remainder=g.items.filter(i=>!/^\d{1,3}$/.test(i.text)&&!/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(i.text));
+      current={date,amountObj,balanceObj,direction,parts:g.items,descParts:remainder.map(i=>i.text)};
       continue;
     }
-
-    let date=dateFromText(line);
-    if(date){
-      let tail=cleanText(line.slice(line.indexOf(date)+date.length));
-      let nums=moneyMatches(tail);
-
-      // A real ICICI transaction row has both the transaction amount and the
-      // running balance on its date line. This prevents dates inside narrations
-      // from being mistaken for new transactions.
-      if(nums.length>=2){
-        finish();
-        let first=nums[0], last=nums[nums.length-1];
-        let txAmount=parseMoney(first[0]);
-        let balObj=parseMoney(last[0]);
-        if(!txAmount.amount||!balObj.amount)continue;
-
-        let beforeAmount=cleanText(tail.slice(0,first.index)
-          .replace(/\b(?:withdrawal|deposit|balance|closing|opening)\b/gi," "));
-        current={
-          date,
-          description:beforeAmount,
-          amount:txAmount.amount,
-          balance:balObj.amount,
-          explicitCredit:/\bCR\b|\bCREDIT\b/i.test(first[0]),
-          explicitDebit:/\bDR\b|\bDEBIT\b/i.test(first[0])
-        };
-        continue;
-      }
-    }
-
-    // Transaction remarks are wrapped over several PDF lines. Accumulate them
-    // until the next transaction date line.
     if(current){
-      let continuation=cleanText(line);
-      if(continuation && !/^\d+$/.test(continuation)) current.description=cleanText(current.description+" "+continuation);
+      // Ignore page headers/footers but retain transaction remarks.
+      if(/www\.icici\.bank\.in|please call|never share|sincerly|team icici bank|legends for transactions|^transaction\s|^s\.?no\.?\s/i.test(text))continue;
+      current.descParts.push(text);
     }
   }
   finish();
@@ -568,32 +568,25 @@ async function parsePDF(file){
   let pdfjs=await getPDFEngine();
   let buf=await file.arrayBuffer();
   let pdf=await pdfjs.getDocument({data:buf}).promise;
-  let lines=[];
-
+  let allItems=[];
   for(let p=1;p<=pdf.numPages;p++){
     let page=await pdf.getPage(p);
     let content=await page.getTextContent();
-    let items=content.items.filter(x=>x.str&&x.str.trim());
-
-    /* Group PDF text by vertical position, then sort left-to-right. */
-    let grouped=[];
-    items.forEach(it=>{
-      let y=Math.round(it.transform[5]);
-      let x=it.transform[4];
-      let g=grouped.find(a=>Math.abs(a.y-y)<=2);
-      if(!g)grouped.push(g={y,textParts:[]});
-      g.textParts.push({x,text:it.str})
-    });
-
-    grouped.sort((a,b)=>b.y-a.y).forEach(g=>{
-      g.textParts.sort((a,b)=>a.x-b.x);
-      lines.push(g.textParts.map(x=>x.text).join(" "))
-    })
+    allItems.push(...content.items);
   }
-
-  pdfPreview.textContent=lines.slice(0,220).join("\n");
-  pdfPreviewWrap.classList.remove("hidden");
-  return parsePDFLines(lines)
+  // Preview remains human-readable.
+  let previewLines=[];
+  const groups=[];
+  for(const it of allItems.filter(x=>x.str&&x.str.trim())){
+    const y=Math.round(it.transform[5]);
+    let g=groups.find(a=>Math.abs(a.y-y)<=2);
+    if(!g){g={y,parts:[]};groups.push(g)}
+    g.parts.push({x:it.transform[4],text:it.str});
+  }
+  groups.sort((a,b)=>b.y-a.y).forEach(g=>{g.parts.sort((a,b)=>a.x-b.x);previewLines.push(g.parts.map(x=>x.text).join(' '))});
+  pdfPreview.textContent=previewLines.slice(0,220).join('\n');
+  pdfPreviewWrap.classList.remove('hidden');
+  return parsePDFStructured(allItems);
 }
 
 function currentSource(){return document.getElementById("source").value.trim()||"Imported"}
