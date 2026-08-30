@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon.svg">
-<title>Private Expense Tracker — V4.0</title>
+<title>Private Expense Tracker — V4.1</title>
 
 <style>
 :root{--bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--good:#15803d;--bad:#dc2626;--warn:#92400e}
@@ -42,7 +42,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V4.0 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V4.1 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
@@ -84,7 +84,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
     </div>
 
     <div class="section card" style="background:#f8fafc">
-      <h3>What V4.0 can handle</h3>
+      <h3>What V4.1 can handle</h3>
       <ul class="small">
         <li>CSV with date, description, amount, type, category, person.</li>
         <li>Excel .xls and .xlsx sheets with Date, Description/Narration, Debit, Credit, Withdrawal, Deposit or Amount.</li>
@@ -566,13 +566,12 @@ function parsePDFStructured(items){
   let added=0;
   let seen=new Set(state.tx.map(t=>[t.date,String(t.description||'').toLowerCase().trim(),Number(t.amount)||0,t.type].join('|')));
   const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
-  // Supports both 01.08.2026 and Axis-style dates such as 01 Aug 2026 / 01 Aug '26.
   const dateRe=/\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(?:'\d{2}|\d{2,4}))\b/i;
   const moneyTokenRe=/(?:₹|INR|Rs\.?\s*)?\(?-?\d[\d,]*\.\d{2}\)?(?:\s*(?:DR|CR|DEBIT|CREDIT))?/gi;
   const groups=[];
 
-  // Build visual lines. A slightly wider Y tolerance is important on iPhone/Safari,
-  // where PDF text fragments from the same printed row can have tiny Y differences.
+  // Preserve page + X/Y coordinates. ICICI statements often split the
+  // description, withdrawal/deposit and balance into separate PDF text rows.
   for(const it of items.filter(x=>x.str&&x.str.trim())){
     const page=Number(it.page||1), y=Number(it.transform?.[5]||0), x=Number(it.transform?.[4]||0);
     let g=groups.find(a=>a.page===page&&Math.abs(a.y-y)<=4);
@@ -584,55 +583,117 @@ function parsePDFStructured(items){
 
   const lineText=g=>clean(g.items.map(i=>i.text).join(' '));
   const allText=groups.map(lineText).join('\n');
-  const isBankLayout=/withdrawal\s+amount/i.test(allText)&&/balance\s*\(?inr\)?/i.test(allText);
+
+  // ICICI savings-account statement detection. Do NOT require the exact
+  // phrase "Withdrawal Amount" because PDF extraction can split/alter headers.
+  const isICICI=/statement\s+of\s+transactions\s+in\s+saving\s+account/i.test(allText) ||
+                (/icici\s+bank/i.test(allText) && /withdrawal|deposit/i.test(allText) && /balance/i.test(allText));
 
   const addTx=(date,desc,amount,type='expense',credit=false)=>{
     desc=clean(desc);
     if(!date||!desc||!amount)return;
-    if(/^(?:date\s+transaction|transaction\s+details|amount\s*\(?inr\)?|payment\s+summary|reward\s+points|statement\s+summary|total\s+amount|minimum\s+amount|credit\s+limit|available\s+credit|previous\s+balance|opening\s+balance|closing\s+balance)/i.test(desc))return;
-    if(/^(?:date|transaction details|amount|inr)$/i.test(desc))return;
+    if(/^(?:date|s\.?no\.?|transaction\s+remarks?|withdrawal(?:\s+amount)?|deposit(?:\s+amount)?|balance|amount|transaction\s+summary|payment\s+summary|statement\s+summary|opening\s+balance|closing\s+balance|total|subtotal)/i.test(desc))return;
     let parsed={date:cleanDate(date),description:desc,amount:Number(amount),type:credit?'refund':type,category:guess(desc),person:'',source:currentSource()};
     classifyImportedTransaction(parsed);
     let key=[parsed.date,parsed.description.toLowerCase(),parsed.amount,parsed.type].join('|');
     if(!seen.has(key)){seen.add(key);state.tx.push(parsed);added++}
   };
 
-  if(isBankLayout){
-    // ICICI-style bank statements: Date + description + Withdrawal/Deposit + Balance.
-    // Pick the second-right-most money value on a dated row; the right-most is balance.
+  if(isICICI){
+    // ICICI savings format is conceptually:
+    // S No | Date | Transaction Remarks | Withdrawal | Deposit | Balance
+    // But PDF.js may put those values on different visual lines. Therefore
+    // each dated row becomes a transaction block until the next dated row.
     let current=null;
+    const ignored=/www\.icici\.bank\.in|please call|never share|sincerely|sincerly|team icici bank|legends for transactions|statement of transactions|customer care|^transaction\s+summary|^s\.?no\.?\s+date|^date\s+transaction/i;
+
     const finish=()=>{
       if(!current)return;
+      // Collect money values primarily from the right-hand statement columns.
+      // The right-most value is Balance; the preceding right-hand value is
+      // Withdrawal or Deposit. This remains true when the columns are blank.
+      let vals=[];
+      for(const g of current.groups){
+        for(const it of g.items){
+          // Ignore obvious account/UTR numbers in the remarks column by using
+          // the visual X position when possible. ICICI's amount columns are on
+          // the right half of the page.
+          if(it.x < current.amountXMin)continue;
+          for(const m of it.text.matchAll(moneyTokenRe)){
+            const pm=parseMoney(m[0]);
+            if(pm.amount)vals.push({amount:pm.amount,x:it.x,negative:pm.negative,raw:m[0]});
+          }
+        }
+      }
+
+      // Fallback: if the PDF's coordinates are unusual, use all monetary
+      // values in the block, still preferring the two right-most values.
+      if(vals.length<2){
+        vals=[];
+        for(const g of current.groups)for(const it of g.items)for(const m of it.text.matchAll(moneyTokenRe)){
+          const pm=parseMoney(m[0]);
+          if(pm.amount)vals.push({amount:pm.amount,x:it.x,negative:pm.negative,raw:m[0]});
+        }
+      }
+      if(vals.length<2){current=null;return;}
+
+      // Deduplicate identical token occurrences produced by PDF.js fragments.
+      vals.sort((a,b)=>a.x-b.x);
+      let unique=[];
+      for(const v of vals){
+        const prev=unique[unique.length-1];
+        if(prev && Math.abs(prev.x-v.x)<3 && Math.abs(prev.amount-v.amount)<0.01)continue;
+        unique.push(v);
+      }
+      vals=unique;
+
+      const balance=vals[vals.length-1];
+      const txCandidates=vals.slice(0,-1);
+      if(!txCandidates.length){current=null;return;}
+      const tx=txCandidates[txCandidates.length-1];
+
+      // Amount column immediately before Balance can be either Withdrawal or
+      // Deposit. Infer direction from the column position when available.
+      let type='expense';
+      if(tx.x > balance.x-75) type='income';
+      else if(tx.negative) type='expense';
+
       let desc=clean(current.desc.join(' '));
-      if(current.amount) addTx(current.date,desc,current.amount,'expense',false);
+      // Strip the S.No/date and monetary values accidentally retained in remarks.
+      desc=desc.replace(/^\s*\d{1,3}\s+/,'').replace(dateRe,' ').replace(moneyTokenRe,' ');
+      desc=clean(desc);
+      addTx(current.date,desc,tx.amount,type,false);
       current=null;
     };
+
     for(const g of groups){
-      const text=lineText(g), dm=text.match(/^\s*(?:\d{1,3}\s+)?(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b/);
+      const text=lineText(g);
+      if(!text)continue;
+      const dm=text.match(/^\s*(?:\d{1,3}\s+)?(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b/);
       if(dm){
         finish();
-        let nums=[];
-        for(const it of g.items)for(const m of it.text.matchAll(moneyTokenRe)){
-          const pm=parseMoney(m[0]); if(pm.amount)nums.push({amount:pm.amount,x:it.x});
-        }
-        nums.sort((a,b)=>a.x-b.x);
-        current={date:cleanDate(dm[1]),amount:nums.length>=2?nums[nums.length-2].amount:0,desc:[text.slice(dm.index+dm[0].length).replace(moneyTokenRe,' ')]};
-      }else if(current&&!/www\.axisbank\.com|axis bank|customer care|important information|page\s+\d+\s+of\s+\d+/i.test(text)){
+        // Estimate the start of the numeric amount columns from this page.
+        // Most ICICI PDFs put them well to the right of the transaction remarks.
+        const xs=g.items.map(i=>i.x);
+        const maxX=xs.length?Math.max(...xs):600;
+        current={date:cleanDate(dm[1]),groups:[g],desc:[text.slice(dm.index+dm[0].length)],amountXMin:Math.max(300,maxX-300)};
+        continue;
+      }
+      if(current){
+        if(ignored.test(text))continue;
+        current.groups.push(g);
         current.desc.push(text);
       }
     }
     finish();
+
+    // If the structured ICICI parser found anything, do not let the generic
+    // credit-card parser reinterpret the same statement.
     if(added)return added;
   }
 
   // Credit-card statements (Axis Atlas included).
-  // The previous parser assumed the date and amount lived on the same visual line.
-  // Axis PDFs frequently place them on adjacent lines/fragments, so this parser:
-  //   1) detects every dated transaction anchor,
-  //   2) collects wrapped description text until the next date,
-  //   3) finds the right-most monetary value in that transaction block,
-  //   4) ignores statement-summary/limit/payment sections.
-  let inTransactions=false, current=null;
+  let inTransactions=false,current=null;
   const sectionStop=/^(?:payment\s+summary|statement\s+summary|reward\s+points|credit\s+limit|available\s+credit|previous\s+balance|opening\s+balance|closing\s+balance|total\s+payment\s+due|minimum\s+payment\s+due)/i;
   const sectionStart=/transaction\s+summary|date\s+transaction\s+details|transaction\s+details\s+amount/i;
 
@@ -646,53 +707,32 @@ function parsePDFStructured(items){
   for(const g of groups){
     const text=lineText(g);
     if(!text)continue;
-
     if(!inTransactions){
       if(sectionStart.test(text)){inTransactions=true;continue;}
       continue;
     }
-
-    if(sectionStop.test(text)){
-      finishCard();
-      inTransactions=false;
-      continue;
-    }
-
+    if(sectionStop.test(text)){finishCard();inTransactions=false;continue;}
     const dm=text.match(dateRe);
     if(dm){
       finishCard();
-      const date=dm[1];
-      let candidates=[];
-      for(const it of g.items){
-        for(const m of it.text.matchAll(moneyTokenRe)){
-          const pm=parseMoney(m[0]);
-          if(pm.amount && /\.\d{2}/.test(m[0])) candidates.push({amount:pm.amount,x:it.x,credit:/\bCR\b/i.test(m[0])});
-        }
+      const candidates=[];
+      for(const it of g.items)for(const m of it.text.matchAll(moneyTokenRe)){
+        const pm=parseMoney(m[0]);
+        if(pm.amount&&/\.\d{2}/.test(m[0]))candidates.push({amount:pm.amount,x:it.x,credit:/\bCR\b/i.test(m[0])});
       }
       candidates.sort((a,b)=>a.x-b.x);
       const chosen=candidates[candidates.length-1]||null;
-      const after=text.slice(dm.index+dm[0].length);
-      current={date,amount:chosen?chosen.amount:0,credit:!!(chosen&&chosen.credit),desc:[after.replace(moneyTokenRe,' ')]};
+      current={date:dm[1],amount:chosen?chosen.amount:0,credit:!!(chosen&&chosen.credit),desc:[text.slice(dm.index+dm[0].length).replace(moneyTokenRe,' ')]};
       continue;
     }
-
     if(current){
       let nums=[];
-      for(const it of g.items){
-        for(const m of it.text.matchAll(moneyTokenRe)){
-          const pm=parseMoney(m[0]);
-          if(pm.amount && /\.\d{2}/.test(m[0])) nums.push({amount:pm.amount,x:it.x,credit:/\bCR\b/i.test(m[0])});
-        }
+      for(const it of g.items)for(const m of it.text.matchAll(moneyTokenRe)){
+        const pm=parseMoney(m[0]);
+        if(pm.amount&&/\.\d{2}/.test(m[0]))nums.push({amount:pm.amount,x:it.x,credit:/\bCR\b/i.test(m[0])});
       }
-      if(nums.length){
-        nums.sort((a,b)=>a.x-b.x);
-        const n=nums[nums.length-1];
-        current.amount=n.amount;
-        current.credit=current.credit||n.credit;
-        current.desc.push(text.replace(moneyTokenRe,' '));
-      }else if(!/www\.axisbank\.com|axis bank|customer care|important information|page\s+\d+\s+of\s+\d+/i.test(text)){
-        current.desc.push(text);
-      }
+      if(nums.length){nums.sort((a,b)=>a.x-b.x);const n=nums[nums.length-1];current.amount=n.amount;current.credit=current.credit||n.credit;current.desc.push(text.replace(moneyTokenRe,' '));}
+      else if(!/www\.axisbank\.com|axis bank|customer care|important information|page\s+\d+\s+of\s+\d+/i.test(text))current.desc.push(text);
     }
   }
   finishCard();
