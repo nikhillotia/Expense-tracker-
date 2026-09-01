@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon.svg">
-<title>Private Expense Tracker — V4.1</title>
+<title>Private Expense Tracker — V4.3</title>
 
 <style>
 :root{--bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--good:#15803d;--bad:#dc2626;--warn:#92400e}
@@ -42,11 +42,12 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V4.1 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V4.3 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
-  <div class="card"><div class="top"><div><div class="muted">August 2026 budget</div><h2 id="overallBudget">₹3,00,000</h2></div><div class="chip" id="usageChip">0% used</div></div><div class="bar"><i id="overallBar" style="width:0%"></i></div><div class="grid stats"><div class="stat"><span class="muted">Spent</span><b id="spent">₹0</b></div><div class="stat"><span class="muted">Remaining</span><b id="remaining">₹3,00,000</b></div><div class="stat"><span class="muted">Transactions</span><b id="txCount">0</b></div></div></div>
+  <div class="card"><div class="top"><label class="muted" for="monthPicker"><b>Month</b></label><select id="monthPicker" onchange="setActiveMonth(this.value)" style="max-width:190px"></select><span id="monthRolloverNote" class="muted small">Auto</span></div></div>
+  <div class="card"><div class="top"><div><div class="muted"><span id="monthLabel">Current month</span> budget</div><h2 id="overallBudget">₹3,00,000</h2></div><div class="chip" id="usageChip">0% used</div></div><div class="bar"><i id="overallBar" style="width:0%"></i></div><div class="grid stats"><div class="stat"><span class="muted">Spent</span><b id="spent">₹0</b></div><div class="stat"><span class="muted">Remaining</span><b id="remaining">₹3,00,000</b></div><div class="stat"><span class="muted">Transactions</span><b id="txCount">0</b></div></div></div>
   <div class="section card"><h2>Top categories</h2><div id="topCategories"></div></div>
   <p class="muted small section" style="padding:0 2px">Spent is calculated from money withdrawn from this account. Deposits are income; refunds/reversals reduce spending. Transfers and card settlements are shown as outflow because the money left this account.</p>
   <div class="section card"><h2>Budget vs actual</h2><div id="budgetRows"></div></div>
@@ -54,12 +55,12 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 
 <section id="transactions" class="view"><div class="card"><div class="top"><h2>Transactions</h2><button onclick="showAdd()">+ Add</button></div><div class="two"><input id="search" placeholder="Search" oninput="renderTransactions()"><select id="filterCategory" onchange="renderTransactions()"></select></div><div id="transactionRows" class="section"></div></div></section>
 
-<section id="budget" class="view"><div class="card"><h2>Monthly budget</h2><div class="form"><label class="muted">Overall budget</label><input id="budgetInput" type="number" inputmode="decimal" value="300000" onchange="setOverallBudget(this.value)"></div></div><div class="section card"><h2>Category budgets</h2><div id="budgetEditor"></div></div></section>
+<section id="budget" class="view"><div class="card"><h2>Monthly budget</h2><div class="form"><label class="muted">Overall budget for <span id="budgetMonthLabel">current month</span></label><input id="budgetInput" type="number" inputmode="decimal" value="300000" onchange="setOverallBudget(this.value)"></div></div><div class="section card"><h2>Category budgets</h2><div id="budgetEditor"></div></div></section>
 
 <section id="import" class="view">
   <div class="card">
     <h2>Import statement</h2>
-    <p class="muted">V3.8 accepts CSV, Excel (.xls/.xlsx) and text-based PDF statements. Files are parsed in your browser; they are not uploaded to a server.</p>
+    <p class="muted">V4.3 accepts CSV, Excel (.xls/.xlsx) and text-based PDF statements. Files are parsed in your browser; they are not uploaded to a server.</p>
 
     <div class="section"><input id="source" placeholder="Source e.g. ICICI Bank / ICICI Card / Axis Card"></div>
 
@@ -84,7 +85,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
     </div>
 
     <div class="section card" style="background:#f8fafc">
-      <h3>What V4.1 can handle</h3>
+      <h3>What V4.3 can handle</h3>
       <ul class="small">
         <li>CSV with date, description, amount, type, category, person.</li>
         <li>Excel .xls and .xlsx sheets with Date, Description/Narration, Debit, Credit, Withdrawal, Deposit or Amount.</li>
@@ -109,6 +110,17 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
       <button onclick="addCategory()">+ Add category</button>
     </div>
     <div id="categoryList" class="section"></div>
+  </div>
+  <div class="section card">
+    <h2>Export data</h2>
+    <p class="muted small">Export your transactions without leaving this device. Choose the current month or all stored transactions.</p>
+    <div class="two">
+      <button onclick="exportTransactions('csv','month')">Current month CSV</button>
+      <button onclick="exportTransactions('xlsx','month')">Current month Excel</button>
+      <button onclick="exportTransactions('csv','all')">All transactions CSV</button>
+      <button onclick="exportTransactions('xlsx','all')">All transactions Excel</button>
+    </div>
+    <p class="muted small section">The top “Export backup” button still creates a full JSON backup of your tracker data.</p>
   </div>
   <div class="section card"><h2>People</h2><div id="people"></div></div>
   <div class="section card"><h2>Privacy</h2><p class="muted">Transactions and statement data are stored in this browser's localStorage. PDF/Excel/CSV parsing happens on this device. No statement file is sent to this app's server.</p></div>
@@ -151,6 +163,21 @@ const DEFAULT_BUDGETS={"Rent":50000,"Food & Dining":25000,"Groceries":20000,"Sho
    Earlier versions stored incorrect classifications (for example a credit as Utilities
    or ordinary transfers as Investments). Do not inherit those rows. */
 let state=JSON.parse(localStorage.getItem("pet_v3")||"null")||{overall:300000,budgets:DEFAULT_BUDGETS,tx:[],rules:[],imports:[],customCats:[]};
+const pad2=n=>String(n).padStart(2,"0");
+function monthKey(d=new Date()){return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`}
+function monthLabel(key){let [y,m]=String(key).split("-").map(Number);return new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric"}).format(new Date(y,m-1,1))}
+function previousMonthKey(key){let [y,m]=String(key).split("-").map(Number);let d=new Date(y,m-2,1);return monthKey(d)}
+function monthOfDate(v){let s=String(v||"");let m=s.match(/^(\d{4})-(\d{2})/);return m?`${m[1]}-${m[2]}`:""}
+state.monthlyBudgets=state.monthlyBudgets&&typeof state.monthlyBudgets==="object"?state.monthlyBudgets:{};
+const initialMonth=monthKey();
+if(state.monthlyBudgets["2026-08"]===undefined && state.tx.some(t=>monthOfDate(t.date)==="2026-08")) state.monthlyBudgets["2026-08"]=Number(state.overall)||300000;
+if(state.monthlyBudgets[initialMonth]===undefined) state.monthlyBudgets[initialMonth]=Number(state.monthlyBudgets[previousMonthKey(initialMonth)]??state.overall)||300000;
+// Always open on the real current calendar month. Historical months remain stored.
+state.activeMonth=initialMonth;
+if(state.monthlyBudgets[state.activeMonth]===undefined){
+  state.monthlyBudgets[state.activeMonth]=Number(state.monthlyBudgets[previousMonthKey(state.activeMonth)]??state.overall)||300000;
+}
+state.overall=Number(state.monthlyBudgets[state.activeMonth])||300000;
 state.customCats=Array.isArray(state.customCats)?state.customCats:[];
 CATS=[...BASE_CATS,...state.customCats.filter(c=>c&&!BASE_CATS.includes(c))];
 state.budgets={...DEFAULT_BUDGETS,...(state.budgets||{})};
@@ -217,23 +244,52 @@ function reclassifyExisting(){
   });
 }
 
-function save(){localStorage.setItem("pet_v3",JSON.stringify(state));renderAll()}
+function save(){
+  state.overall=Number(state.monthlyBudgets[state.activeMonth])||0;
+  localStorage.setItem("pet_v3",JSON.stringify(state));
+  renderAll()
+}
+function txInActiveMonth(t){return monthOfDate(t.date)===state.activeMonth}
 function expenseTotal(){
-  // Monthly budget is based on cash leaving the tracked account. Income is excluded;
-  // refunds/reversals reduce the outflow. Transfers and card settlements remain visible
-  // as outflow because they are real withdrawals from this account.
-  return state.tx.filter(t=>t.type!=="income"&&t.type!=="refund").reduce((s,t)=>s+t.amount,0)-state.tx.filter(t=>t.type==="refund").reduce((s,t)=>s+t.amount,0);
+  const rows=state.tx.filter(txInActiveMonth);
+  return rows.filter(t=>t.type!=="income"&&t.type!=="refund").reduce((s,t)=>s+t.amount,0)-rows.filter(t=>t.type==="refund").reduce((s,t)=>s+t.amount,0);
 }
 function catTotal(c){
-  return state.tx.filter(t=>t.category===c&&(t.type!=="income")).reduce((s,t)=>s+(t.type==="refund"?-t.amount:t.amount),0);
+  return state.tx.filter(t=>txInActiveMonth(t)&&t.category===c&&(t.type!=="income")).reduce((s,t)=>s+(t.type==="refund"?-t.amount:t.amount),0);
 }
-
+function getMonthBudget(key=state.activeMonth){
+  if(state.monthlyBudgets[key]!==undefined)return Number(state.monthlyBudgets[key])||0;
+  const prev=previousMonthKey(key);
+  return Number(state.monthlyBudgets[prev]??state.overall)||300000;
+}
+function setActiveMonth(key){
+  if(!/^\d{4}-\d{2}$/.test(key))return;
+  state.activeMonth=key;
+  if(state.monthlyBudgets[key]===undefined) state.monthlyBudgets[key]=getMonthBudget(key);
+  state.overall=state.monthlyBudgets[key];
+  localStorage.setItem("pet_v3",JSON.stringify(state));
+  renderAll();
+}
+function ensureMonthOptions(){
+  const picker=document.getElementById("monthPicker");
+  if(!picker)return;
+  const keys=new Set(Object.keys(state.monthlyBudgets));
+  state.tx.forEach(t=>{const k=monthOfDate(t.date);if(k)keys.add(k)});
+  keys.add(monthKey());
+  const sorted=[...keys].filter(Boolean).sort().reverse();
+  picker.innerHTML=sorted.map(k=>`<option value="${k}" ${k===state.activeMonth?"selected":""}>${esc(monthLabel(k))}</option>`).join("");
+}
 function renderDashboard(){
-  let spent=expenseTotal(),rem=state.overall-spent,pct=state.overall?Math.min(100,Math.max(0,spent/state.overall*100)):0;
-  overallBudget.textContent=money(state.overall);spentEl.textContent=money(spent);remaining.textContent=money(rem);
-  remaining.className=rem<0?"negative":"positive";txCount.textContent=state.tx.length;usageChip.textContent=Math.round(pct)+"% used";overallBar.style.width=pct+"%";
+  const budget=getMonthBudget();
+  state.overall=budget;
+  const spent=expenseTotal(),rem=budget-spent,pct=budget?Math.min(100,Math.max(0,spent/budget*100)):0;
+  const label=monthLabel(state.activeMonth);
+  document.getElementById("monthLabel").textContent=label;
+  document.getElementById("budgetMonthLabel").textContent=label;
+  overallBudget.textContent=money(budget);spentEl.textContent=money(spent);remaining.textContent=money(rem);
+  remaining.className=rem<0?"negative":"positive";txCount.textContent=state.tx.filter(txInActiveMonth).length;usageChip.textContent=Math.round(pct)+"% used";overallBar.style.width=pct+"%";
   let cats=CATS.map(c=>[c,catTotal(c)]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
-  topCategories.innerHTML=cats.length?cats.slice(0,8).map(x=>`<div class="row"><span>${esc(x[0])}</span><span class="amount">${money(x[1])}</span></div>`).join(""):`<div class="empty">No transactions yet.</div>`;
+  topCategories.innerHTML=cats.length?cats.slice(0,8).map(x=>`<div class="row"><span>${esc(x[0])}</span><span class="amount">${money(x[1])}</span></div>`).join(""):`<div class="empty">No transactions for ${esc(label)}.</div>`;
   budgetRows.innerHTML=CATS.filter(c=>state.budgets[c]>0||catTotal(c)>0).map(c=>{let b=state.budgets[c]||0,a=catTotal(c),d=b-a;return `<div class="row"><div><b>${esc(c)}</b><div class="muted">Budget ${money(b)} · Actual ${money(a)}</div></div><span class="amount ${d<0?"negative":"positive"}">${d>=0?"+":""}${money(d)}</span></div>`}).join("")||`<div class="empty">Set category budgets to start.</div>`
 }
 const spentEl=document.getElementById("spent");
@@ -241,6 +297,7 @@ const spentEl=document.getElementById("spent");
 function renderTransactions(){
   let q=(document.getElementById("search")?.value||"").toLowerCase(),f=document.getElementById("filterCategory")?.value||"";
   let rows=state.tx.map((t,i)=>({...t,_i:i})).filter(t=>
+    txInActiveMonth(t)&&
     (!q||[t.description,t.category,t.person,t.source].join(" ").toLowerCase().includes(q))&&
     (!f||t.category===f)
   ).slice().reverse();
@@ -250,7 +307,7 @@ function renderTransactions(){
     return `<div class="row" style="align-items:flex-start">
       <div style="min-width:0;flex:1">
         <b>${esc(t.description)}</b>
-        <div class="muted">${esc(t.date)} · ${esc(t.source||"Manual")}${t.person?" · "+esc(t.person):""}</div>
+        <div class="muted">${esc(t.date)} · ${esc(t.source||"Manual / Unbilled")}${t.person?" · "+esc(t.person):""}</div>
         <select class="category-edit" onchange="setTransactionCategory(${t._i},this.value)">${options}</select>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
@@ -305,7 +362,7 @@ function renderMore(){
   imports.innerHTML=state.imports.length?state.imports.slice().reverse().map(i=>`<div class="row"><div><b>${esc(i.source)}</b><div class="muted">${esc(i.date)} · ${i.count} transactions · ${esc(i.format||"")} ${i.file?"· "+esc(i.file):""}</div></div></div>`).join(""):`<div class="empty">No imports yet.</div>`;
 }
 
-function setOverallBudget(v){state.overall=Number(v)||0;save()}
+function setOverallBudget(v){state.monthlyBudgets[state.activeMonth]=Number(v)||0;state.overall=state.monthlyBudgets[state.activeMonth];save()}
 function setCatBudget(c,v){state.budgets[c]=Number(v)||0;save()}
 
 function addCategory(){
@@ -345,7 +402,8 @@ function populateSelects(){
   let opts=CATS.map(c=>`<option>${esc(c)}</option>`).join("");
   filterCategory.innerHTML='<option value="">All categories</option>'+opts;
   aCat.innerHTML=opts;
-  budgetInput.value=state.overall;
+  ensureMonthOptions();
+  budgetInput.value=getMonthBudget();
   renderCategoryManager();
 }
 
@@ -355,7 +413,7 @@ function closeModal(){modal.style.display="none"}
 function addTransaction(){
   let amount=Number(aAmount.value);
   if(!aDesc.value||!amount)return alert("Enter a description and amount.");
-  state.tx.push({date:aDate.value,description:aDesc.value,amount:Math.abs(amount),type:aType.value,category:aCat.value,person:aPerson.value,source:"Manual"});
+  state.tx.push({date:aDate.value,description:aDesc.value,amount:Math.abs(amount),type:aType.value,category:aCat.value,person:aPerson.value,source:"Manual / Unbilled"});
   closeModal();save()
 }
 
@@ -850,13 +908,50 @@ async function importStatement(){
 
 function togglePreview(){pdfPreviewWrap.classList.toggle("hidden")}
 
-function exportData(){
-  let blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+function downloadBlob(blob,filename){
   let a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download="expense-tracker-backup.json";
+  a.download=filename;
+  document.body.appendChild(a);
   a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000)
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+function exportData(){
+  let blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  downloadBlob(blob,"expense-tracker-backup.json");
+}
+
+function exportTransactions(format,scope){
+  const rows=(scope==="month"?state.tx.filter(txInActiveMonth):state.tx.slice()).map(t=>({
+    Date:t.date||"",
+    Description:t.description||"",
+    Amount:Number(t.amount)||0,
+    Type:t.type||"",
+    Category:t.category||"",
+    Person:t.person||"",
+    Source:t.source||""
+  }));
+  if(!rows.length){
+    alert(scope==="month"?`No transactions in ${monthLabel(state.activeMonth)}.`:"No transactions to export.");
+    return;
+  }
+  const scopeName=scope==="month"?state.activeMonth:"all-transactions";
+  if(format==="csv"){
+    const keys=Object.keys(rows[0]);
+    const csv=[keys,...rows.map(r=>keys.map(k=>{
+      const v=String(r[k]??"");
+      return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;
+    }))].map(r=>r.join(",")).join("\r\n");
+    downloadBlob(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),`expense-${scopeName}.csv`);
+  }else{
+    if(typeof XLSX==="undefined"){alert("Excel export is unavailable. Please reload the app and try again.");return;}
+    const ws=XLSX.utils.json_to_sheet(rows);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"Transactions");
+    XLSX.writeFile(wb,`expense-${scopeName}.xlsx`);
+  }
 }
 
 function resetApp(){
