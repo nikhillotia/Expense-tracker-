@@ -48,7 +48,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 <section id="dashboard" class="view active">
   <div class="card"><div class="top"><label class="muted" for="monthPicker"><b>Month</b></label><select id="monthPicker" onchange="setActiveMonth(this.value)" style="max-width:190px"></select><span id="monthRolloverNote" class="muted small">Auto</span></div></div>
   <div class="card"><div class="top"><div><div class="muted"><span id="monthLabel">Current month</span> budget</div><h2 id="overallBudget">₹3,00,000</h2></div><div class="chip" id="usageChip">0% used</div></div><div class="bar"><i id="overallBar" style="width:0%"></i></div><div class="grid stats"><div class="stat"><span class="muted">Spent</span><b id="spent">₹0</b></div><div class="stat"><span class="muted">Remaining</span><b id="remaining">₹3,00,000</b></div><div class="stat"><span class="muted">Transactions</span><b id="txCount">0</b></div></div></div>
-  <div class="section card"><h2>Top categories</h2><div id="topCategories"></div></div><p class="muted small section" style="padding:0 2px">Transfers, card settlements and investments are excluded from Spent but remain in Transactions for audit. Use “All months” there to see transactions such as deposits from previous-month statement dates.</p>
+  <div class="section card"><h2>Top categories</h2><div id="topCategories"></div></div><p class="muted small section" style="padding:0 2px">Transfers, card settlements, investments and cash withdrawals are excluded from Spent but remain in Transactions for audit. Use “All months” there to see transactions such as deposits from previous-month statement dates.</p>
   <p class="muted small section" style="padding:0 2px">Spent is calculated from genuine expenses only. Transfers, credit-card settlements and investments are excluded from the budget-spending total; deposits/income and refunds are excluded as well. Cash withdrawals remain spending.</p>
   <div class="section card"><h2>Budget vs actual</h2><div id="budgetRows"></div></div>
 </section>
@@ -244,7 +244,7 @@ function txInActiveMonth(t){return monthOfDate(t.date)===state.activeMonth}
 function isBudgetExpense(t){
   if(!t || t.type==="income" || t.type==="refund" || t.type==="transfer" || t.type==="settlement") return false;
   // Investments/MFs are asset allocation, not monthly living expense.
-  if(t.category==="Investments" || t.category==="Mutual Fund") return false;
+  if(t.category==="Investments" || t.category==="Mutual Fund" || t.category==="Cash Withdrawal") return false;
   return true;
 }
 function expenseTotal(){
