@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon.svg">
-<title>Private Expense Tracker — V4.3</title>
+<title>Private Expense Tracker — V4.4</title>
 
 <style>
 :root{--bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--good:#15803d;--bad:#dc2626;--warn:#92400e}
@@ -42,18 +42,18 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </head>
 
 <body>
-<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V4.3 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
+<header><div class="top"><div><h1>💰 Private Expense Tracker</h1><div class="muted">V4.4 · PDF + Excel + CSV · local processing</div></div><button class="secondary" onclick="exportData()">Export backup</button></div></header>
 
 <main>
 <section id="dashboard" class="view active">
   <div class="card"><div class="top"><label class="muted" for="monthPicker"><b>Month</b></label><select id="monthPicker" onchange="setActiveMonth(this.value)" style="max-width:190px"></select><span id="monthRolloverNote" class="muted small">Auto</span></div></div>
   <div class="card"><div class="top"><div><div class="muted"><span id="monthLabel">Current month</span> budget</div><h2 id="overallBudget">₹3,00,000</h2></div><div class="chip" id="usageChip">0% used</div></div><div class="bar"><i id="overallBar" style="width:0%"></i></div><div class="grid stats"><div class="stat"><span class="muted">Spent</span><b id="spent">₹0</b></div><div class="stat"><span class="muted">Remaining</span><b id="remaining">₹3,00,000</b></div><div class="stat"><span class="muted">Transactions</span><b id="txCount">0</b></div></div></div>
-  <div class="section card"><h2>Top categories</h2><div id="topCategories"></div></div>
-  <p class="muted small section" style="padding:0 2px">Spent is calculated from money withdrawn from this account. Deposits are income; refunds/reversals reduce spending. Transfers and card settlements are shown as outflow because the money left this account.</p>
+  <div class="section card"><h2>Top categories</h2><div id="topCategories"></div></div><p class="muted small section" style="padding:0 2px">Transfers, card settlements and investments are excluded from Spent but remain in Transactions for audit. Use “All months” there to see transactions such as deposits from previous-month statement dates.</p>
+  <p class="muted small section" style="padding:0 2px">Spent is calculated from genuine expenses only. Transfers, credit-card settlements and investments are excluded from the budget-spending total; deposits/income and refunds are excluded as well. Cash withdrawals remain spending.</p>
   <div class="section card"><h2>Budget vs actual</h2><div id="budgetRows"></div></div>
 </section>
 
-<section id="transactions" class="view"><div class="card"><div class="top"><h2>Transactions</h2><button onclick="showAdd()">+ Add</button></div><div class="two"><input id="search" placeholder="Search" oninput="renderTransactions()"><select id="filterCategory" onchange="renderTransactions()"></select></div><div id="transactionRows" class="section"></div></div></section>
+<section id="transactions" class="view"><div class="card"><div class="top"><h2>Transactions</h2><button onclick="showAdd()">+ Add</button></div><div class="two"><input id="search" placeholder="Search" oninput="renderTransactions()"><select id="filterCategory" onchange="renderTransactions()"></select></div><div class="section"><select id="transactionPeriod" onchange="renderTransactions()"><option value="all">All months</option><option value="month">Selected month only</option></select></div><div id="transactionRows" class="section"></div></div></section>
 
 <section id="budget" class="view"><div class="card"><h2>Monthly budget</h2><div class="form"><label class="muted">Overall budget for <span id="budgetMonthLabel">current month</span></label><input id="budgetInput" type="number" inputmode="decimal" value="300000" onchange="setOverallBudget(this.value)"></div></div><div class="section card"><h2>Category budgets</h2><div id="budgetEditor"></div></div></section>
 
@@ -85,12 +85,12 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
     </div>
 
     <div class="section card" style="background:#f8fafc">
-      <h3>What V4.3 can handle</h3>
+      <h3>What V4.4 can handle</h3>
       <ul class="small">
         <li>CSV with date, description, amount, type, category, person.</li>
         <li>Excel .xls and .xlsx sheets with Date, Description/Narration, Debit, Credit, Withdrawal, Deposit or Amount.</li>
         <li>Text-based PDFs with separate Withdrawal/Deposit/Balance columns; Withdrawal is the outgoing amount, Deposit is income, and Balance is never counted as spending.</li>
-        <li>Automatic mapping for known merchants; credits/reversals never count as spending. Every genuine bank withdrawal is counted in monthly outflow, while the category still identifies transfers, settlements, investments, etc.</li>
+        <li>Automatic mapping for known merchants; credits/reversals never count as spending. Every bank movement is retained, but only genuine expenses count toward the monthly spending/budget total. Transfers, card settlements and investments remain visible for audit.</li>
       </ul>
       <p class="muted">If a PDF is scanned as images, it needs OCR and will not parse automatically in this version.</p>
     </div>
@@ -100,7 +100,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </section>
 
 <section id="more" class="view">
-  <div class="card"><h2>Mapping audit</h2><p class="muted section">Automatic mapping is shown below. Bank withdrawals count as monthly outflow; credits and reversals do not inflate spending. Categories identify transfers and other non-merchant outflows for review.</p><div id="mappingAudit"></div></div>
+  <div class="card"><h2>Mapping audit</h2><p class="muted section">Automatic mapping is shown below. All bank movements are retained; only genuine expenses count toward monthly spending. Transfers, card settlements and investments are excluded from the budget total.</p><div id="mappingAudit"></div></div>
   <div class="card"><h2>Rules</h2><div id="rules"></div></div>
   <div class="section card">
     <h2>Categories</h2>
@@ -190,15 +190,13 @@ const money=n=>new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",ma
 
 function classifyImportedTransaction(t){
   const desc=String(t.description||"");
-  const originalType=t.type;
   const imported=!!t.source && t.source!=="Manual";
   const category=guess(desc);
 
-  // A bank statement has a very clear cash-flow direction: a Deposit is income,
-  // while a Withdrawal is money leaving the account. The running Balance is not
-  // an amount at all. For imported statements, keep every genuine withdrawal as
-  // an expense/outflow even when its category is Transfer or Card Settlement.
-  if(originalType==="income"){
+  t.category=category;
+
+  // Deposits/income remain income, except genuine refunds/cashback.
+  if(t.type==="income"){
     if(/refund|reversal|reversed|\brvsl\b|cashback|cash back/i.test(desc)){
       t.category=category==="Investments"?"Investments":"Refund / Cashback";
       t.type="refund";
@@ -209,53 +207,53 @@ function classifyImportedTransaction(t){
     return;
   }
 
-  t.category=category;
-
+  // Explicit non-spending bank movements keep their own type.
   if(category==="Refund / Cashback"){
     t.type="refund";
-  }else if(imported){
-    // Imported withdrawals always contribute to monthly outflow. This includes
-    // transfers and credit-card bill payments because they are still cash leaving
-    // the tracked account. Deposits were handled above.
-    t.type="expense";
-  }else if(category==="Transfer"){
+  }else if(category==="Transfer" || category==="Cash Transfer"){
     t.type="transfer";
+  }else if(category==="Bank / Card Charges" &&
+           /cc billpay|ccbillpay|credit card bill|card payment|billpay.*self|fcpgaxisbankbs|fcpgupiintent/i.test(desc)){
+    t.type="settlement";
+  }else if(category==="Investments" || category==="Mutual Fund"){
+    // Investments are money out, but not personal-consumption spending.
+    t.type="expense";
   }else{
     t.type="expense";
   }
 }
-
 function reclassifyExisting(){
   state.tx.forEach(t=>{
-    const desc=String(t.description||"");
     const src=String(t.source||"");
-    // Re-run the import classifier for bank-statement rows already stored in the browser.
-    // This also upgrades V3.0 rows that were incorrectly stored as Transfer/settlement.
-    // Do not alter transactions the user entered manually.
-    if(src && src!=="Manual"){
-      classifyImportedTransaction(t);
-    }
+    if(src && src!=="Manual") classifyImportedTransaction(t);
 
-    // Explicit wording wins even if an older version stored the row as Transfer.
+    // Explicit wording wins for money given to a person.
+    const desc=String(t.description||"");
     if(/\bgave\s+(?:rs\.?|₹)?\s*[\d,]+(?:\.\d+)?\b|\bmoney given to\b|\bloan\s+to\b|\bpersonal loan\b|\bpersonal transfer to\b|\bgiven to (?:mr|mrs|ms)\b/i.test(desc)){
       t.category="Money Given to Person";
       if(t.type!=="income" && t.type!=="refund") t.type="expense";
     }
   });
 }
-
 function save(){
   state.overall=Number(state.monthlyBudgets[state.activeMonth])||0;
   localStorage.setItem("pet_v3",JSON.stringify(state));
   renderAll()
 }
 function txInActiveMonth(t){return monthOfDate(t.date)===state.activeMonth}
+function isBudgetExpense(t){
+  if(!t || t.type==="income" || t.type==="refund" || t.type==="transfer" || t.type==="settlement") return false;
+  // Investments/MFs are asset allocation, not monthly living expense.
+  if(t.category==="Investments" || t.category==="Mutual Fund") return false;
+  return true;
+}
 function expenseTotal(){
-  const rows=state.tx.filter(txInActiveMonth);
-  return rows.filter(t=>t.type!=="income"&&t.type!=="refund").reduce((s,t)=>s+t.amount,0)-rows.filter(t=>t.type==="refund").reduce((s,t)=>s+t.amount,0);
+  return state.tx.filter(t=>txInActiveMonth(t)&&isBudgetExpense(t))
+    .reduce((s,t)=>s+(Number(t.amount)||0),0);
 }
 function catTotal(c){
-  return state.tx.filter(t=>txInActiveMonth(t)&&t.category===c&&(t.type!=="income")).reduce((s,t)=>s+(t.type==="refund"?-t.amount:t.amount),0);
+  return state.tx.filter(t=>txInActiveMonth(t)&&t.category===c&&isBudgetExpense(t))
+    .reduce((s,t)=>s+(Number(t.amount)||0),0);
 }
 function getMonthBudget(key=state.activeMonth){
   if(state.monthlyBudgets[key]!==undefined)return Number(state.monthlyBudgets[key])||0;
@@ -296,8 +294,9 @@ const spentEl=document.getElementById("spent");
 
 function renderTransactions(){
   let q=(document.getElementById("search")?.value||"").toLowerCase(),f=document.getElementById("filterCategory")?.value||"";
+  let period=document.getElementById("transactionPeriod")?.value||"all";
   let rows=state.tx.map((t,i)=>({...t,_i:i})).filter(t=>
-    txInActiveMonth(t)&&
+    (period==="all" || txInActiveMonth(t))&&
     (!q||[t.description,t.category,t.person,t.source].join(" ").toLowerCase().includes(q))&&
     (!f||t.category===f)
   ).slice().reverse();
@@ -892,7 +891,7 @@ async function importStatement(){
 
     state.imports.push({source,date:new Date().toISOString().slice(0,10),count:added,format,file:file.name});
     save();
-    setStatus(`Imported ${added} transactions from ${file.name}. Withdrawal is counted as outflow; Deposit and Balance are not.`,added?"ok":"info");
+    setStatus(`Imported ${added} transactions from ${file.name}. All rows are retained; only genuine expenses affect the budget total.`,added?"ok":"info");
 
     if(!added&&format==="PDF"){
       setStatus("PDF opened successfully, but no transactions were detected. If it is a scanned/image PDF, OCR is required. If it is text-based, send me a sample and I can tune the parser for that bank/card format.","error")
